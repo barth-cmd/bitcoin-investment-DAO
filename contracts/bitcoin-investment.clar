@@ -96,3 +96,70 @@
         (not (is-eq address (as-contract tx-sender)))
     )
 )
+
+;; Governance Helper Functions
+(define-private (get-proposal-status (proposal-id uint))
+    (match (map-get? proposals proposal-id)
+        proposal (get status proposal)
+        "NOT_FOUND"
+    )
+)
+
+(define-private (calculate-voting-power (address principal))
+    (match (map-get? members address)
+        member (get staked-amount member)
+        u0
+    )
+)
+
+;; Administrative Functions
+(define-public (initialize (new-owner principal))
+    (begin
+        (asserts! (is-dao-owner) ERR-NOT-AUTHORIZED)
+        (asserts! (validate-principal new-owner) ERR-INVALID-OWNER)
+        (var-set dao-owner new-owner)
+        (ok true)
+    )
+)
+
+;; Membership Management
+(define-public (stake-tokens (amount uint))
+    (begin
+        (asserts! (>= amount u0) ERR-INVALID-AMOUNT)
+        (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+        
+        (let (
+            (current-balance (default-to 
+                {staked-amount: u0, last-reward-block: block-height, rewards-claimed: u0} 
+                (map-get? members tx-sender)))
+        )
+            (map-set members tx-sender {
+                staked-amount: (+ (get staked-amount current-balance) amount),
+                last-reward-block: block-height,
+                rewards-claimed: (get rewards-claimed current-balance)
+            })
+            
+            (var-set total-staked (+ (var-get total-staked) amount))
+            (ok true)
+        )
+    )
+)
+
+(define-public (unstake-tokens (amount uint))
+    (let (
+        (current-balance (unwrap! (map-get? members tx-sender) ERR-NOT-AUTHORIZED))
+    )
+    (begin
+        (asserts! (>= (get staked-amount current-balance) amount) ERR-INSUFFICIENT-BALANCE)
+        (try! (as-contract (stx-transfer? amount (as-contract tx-sender) tx-sender)))
+        
+        (map-set members tx-sender {
+            staked-amount: (- (get staked-amount current-balance) amount),
+            last-reward-block: block-height,
+            rewards-claimed: (get rewards-claimed current-balance)
+        })
+        
+        (var-set total-staked (- (var-get total-staked) amount))
+        (ok true)
+    ))
+)
