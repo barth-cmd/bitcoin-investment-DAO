@@ -26,6 +26,7 @@
 (define-constant ERR-INVALID-TITLE (err u109))
 (define-constant ERR-INVALID-DESCRIPTION (err u110))
 (define-constant ERR-INVALID-RECIPIENT (err u111))
+(define-constant ERR-INVALID-VOTE (err u112))
 
 ;; Governance Parameters
 (define-data-var dao-owner principal tx-sender)
@@ -204,6 +205,7 @@
     (let (
         (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
         (voter-power (calculate-voting-power tx-sender))
+        (vote-record {vote: vote-for})
     )
     (begin
         (asserts! (is-member tx-sender) ERR-NOT-AUTHORIZED)
@@ -211,16 +213,19 @@
         (asserts! (<= block-height (get end-block proposal)) ERR-PROPOSAL-EXPIRED)
         (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
         
-        (map-set votes {proposal-id: proposal-id, voter: tx-sender} {vote: vote-for})
+        ;; Create a validated vote record
+        (map-set votes 
+            {proposal-id: proposal-id, voter: tx-sender} 
+            vote-record)
         
         (map-set proposals proposal-id 
             (merge proposal 
                 {
-                    yes-votes: (if vote-for 
+                    yes-votes: (if (get vote vote-record)
                         (+ (get yes-votes proposal) voter-power)
                         (get yes-votes proposal)
                     ),
-                    no-votes: (if vote-for 
+                    no-votes: (if (get vote vote-record)
                         (get no-votes proposal)
                         (+ (get no-votes proposal) voter-power)
                     )
