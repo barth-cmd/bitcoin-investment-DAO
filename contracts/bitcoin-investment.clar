@@ -26,3 +26,40 @@
 (define-constant ERR-INVALID-TITLE (err u109))
 (define-constant ERR-INVALID-DESCRIPTION (err u110))
 (define-constant ERR-INVALID-RECIPIENT (err u111))
+
+;; Governance Parameters
+(define-data-var dao-owner principal tx-sender)
+(define-data-var total-staked uint u0)
+(define-data-var proposal-count uint u0)
+(define-data-var quorum-threshold uint u500) ;; 50% in basis points
+(define-data-var proposal-duration uint u144) ;; ~24 hours in blocks
+(define-data-var min-proposal-amount uint u1000000) ;; Minimum STX required for proposal creation
+
+;; Data Structures
+;; Tracks member participation and rewards
+(define-map members 
+    principal 
+    {
+        staked-amount: uint,
+        last-reward-block: uint,
+        rewards-claimed: uint
+    }
+)
+
+;; Stores proposal details and current state
+(define-map proposals 
+    uint 
+    {
+        proposer: principal,
+        title: (string-ascii 100),
+        description: (string-ascii 500),
+        amount: uint,
+        recipient: principal,
+        start-block: uint,
+        end-block: uint,
+        yes-votes: uint,
+        no-votes: uint,
+        status: (string-ascii 20),
+        executed: bool
+    }
+)
