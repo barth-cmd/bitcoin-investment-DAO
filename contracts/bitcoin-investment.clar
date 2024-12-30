@@ -163,3 +163,111 @@
         (ok true)
     ))
 )
+
+;; Proposal Management
+(define-public (create-proposal (title (string-ascii 100)) 
+                              (description (string-ascii 500)) 
+                              (amount uint)
+                              (recipient principal))
+    (let (
+        (proposal-id (+ (var-get proposal-count) u1))
+        (proposer-stake (calculate-voting-power tx-sender))
+    )
+    (begin
+        (asserts! (>= proposer-stake (var-get min-proposal-amount)) ERR-NOT-AUTHORIZED)
+        (asserts! (>= amount u0) ERR-INVALID-AMOUNT)
+        (asserts! (validate-string-ascii title) ERR-INVALID-TITLE)
+        (asserts! (validate-string-ascii description) ERR-INVALID-DESCRIPTION)
+        (asserts! (validate-principal recipient) ERR-INVALID-RECIPIENT)
+        
+        (map-set proposals proposal-id {
+            proposer: tx-sender,
+            title: title,
+            description: description,
+            amount: amount,
+            recipient: recipient,
+            start-block: block-height,
+            end-block: (+ block-height (var-get proposal-duration)),
+            yes-votes: u0,
+            no-votes: u0,
+            status: "ACTIVE",
+            executed: false
+        })
+        
+        (var-set proposal-count proposal-id)
+        (ok proposal-id)
+    ))
+)
+
+;; Voting System
+(define-public (vote (proposal-id uint) (vote-for bool))
+    (let (
+        (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+        (voter-power (calculate-voting-power tx-sender))
+    )
+    (begin
+        (asserts! (is-member tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (is-eq (get status proposal) "ACTIVE") ERR-PROPOSAL-NOT-ACTIVE)
+        (asserts! (<= block-height (get end-block proposal)) ERR-PROPOSAL-EXPIRED)
+        (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
+        
+        (map-set votes {proposal-id: proposal-id, voter: tx-sender} {vote: vote-for})
+        
+        (map-set proposals proposal-id 
+            (merge proposal 
+                {
+                    yes-votes: (if vote-for 
+                        (+ (get yes-votes proposal) voter-power)
+                        (get yes-votes proposal)
+                    ),
+                    no-votes: (if vote-for 
+                        (get no-votes proposal)
+                        (+ (get no-votes proposal) voter-power)
+                    )
+                }
+            )
+        )
+        (ok true)
+    ))
+)
+
+;; Proposal Execution
+(define-public (execute-proposal (proposal-id uint))
+    (let (
+        (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+    )
+    (begin
+        (asserts! (>= block-height (get end-block proposal)) ERR-PROPOSAL-NOT-ACTIVE)
+        (asserts! (not (get executed proposal)) ERR-INVALID-STATUS)
+        
+        (if (and
+            (>= (get yes-votes proposal) 
+                (/ (* (var-get total-staked) (var-get quorum-threshold)) u1000)
+            )
+            (> (get yes-votes proposal) (get no-votes proposal))
+        )
+            (begin
+                (try! (as-contract (stx-transfer? (get amount proposal) 
+                    (as-contract tx-sender) 
+                    (get recipient proposal))))
+                
+                (map-set proposals proposal-id 
+                    (merge proposal {
+                        status: "EXECUTED",
+                        executed: true
+                    })
+                )
+                (ok true)
+            )
+            (begin
+                (map-set proposals proposal-id 
+                    (merge proposal {
+                        status: "REJECTED",
+                        executed: true
+                    })
+                )
+                (ok true)
+            )
+        )
+    ))
+)
