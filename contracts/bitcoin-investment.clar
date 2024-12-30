@@ -63,3 +63,36 @@
         executed: bool
     }
 )
+
+;; Records member votes on proposals
+(define-map votes 
+    {proposal-id: uint, voter: principal} 
+    {vote: bool}
+)
+
+;; Authorization Functions
+(define-private (is-dao-owner)
+    (is-eq tx-sender (var-get dao-owner))
+)
+
+(define-private (is-member (address principal))
+    (match (map-get? members address)
+        member (> (get staked-amount member) u0)
+        false
+    )
+)
+
+;; Validation Functions
+(define-private (validate-string-ascii (input (string-ascii 500)))
+    (and 
+        (not (is-eq input ""))
+        (<= (len input) u500)
+    )
+)
+
+(define-private (validate-principal (address principal))
+    (and
+        (not (is-eq address tx-sender))
+        (not (is-eq address (as-contract tx-sender)))
+    )
+)
